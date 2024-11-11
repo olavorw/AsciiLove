@@ -90,7 +90,7 @@ class ASCIIArtApp(QMainWindow):
         """
         super().__init__()
         self.setWindowTitle("ASCII Art Generator")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 1100, 1100)
 
         self.layout = QVBoxLayout()
 
