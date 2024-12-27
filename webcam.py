@@ -225,7 +225,7 @@ def main():
 
     # Try a big grid, e.g., 160×90 or 200×112.
     # The bigger you go, the heavier the rendering loop.
-    window = AsciiWebcam(camera_index=3, ascii_width= 250, ascii_height=112) # 0 is webcam, 3 is OBS virtual camera
+    window = AsciiWebcam(camera_index=0, ascii_width= 250, ascii_height=112) # 0 is webcam, 3 is OBS virtual camera
     window.show()
     sys.exit(app.exec_())
 
