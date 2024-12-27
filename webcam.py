@@ -180,7 +180,7 @@ class ColorAsciiWidget(QtWidgets.QWidget):
 class AsciiWebcam(QtWidgets.QMainWindow):
     def __init__(self, camera_index=0, ascii_width=160, ascii_height=90):
         super().__init__()
-        self.setWindowTitle("Color ASCII Webcam (High Res + Faster)")
+        self.setWindowTitle("Color ASCII RealCam (High Res + Faster)")
 
         # Main widget
         central_widget = QtWidgets.QWidget(self)
