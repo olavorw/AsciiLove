@@ -18,13 +18,15 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         # Use QTextEdit to display HTML. Let's style it:
         self.ascii_display = QtWidgets.QTextEdit()
         self.ascii_display.setReadOnly(True)
-        # Make background black, use a monospaced font, and white as default text color:
+        # Make background black, use a monospaced font, larger font size, and add letter spacing.
+        # 'letter-spacing: 2px;' ensures more space between characters horizontally.
         self.ascii_display.setStyleSheet("""
             QTextEdit {
-                background-color: black; 
-                color: white; 
-                font-family: 'Courier New', monospace; 
-                font-size: 9pt;
+                background-color: black;
+                color: white;
+                font-family: 'Courier New', monospace;
+                font-size: 14pt;
+                letter-spacing: 2px; /* Increase if you want even more spacing */
             }
         """)
         layout.addWidget(self.ascii_display)
@@ -39,42 +41,35 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         self.timer.timeout.connect(self.update_frame)
         self.timer.start(30)  # ~33 fps
 
-        # Extended ASCII character set (darkest -> brightest)
-        # Source: https://stackoverflow.com/questions/47143332
-        self.ascii_chars = list(" .'`^\",:;Il!i~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$")
+        # Fewer ASCII characters (darkest -> brightest), for a bolder look
+        # Example: " .:-=+*#@"
+        self.ascii_chars = list(" .:-=+*#@")
 
     def update_frame(self):
         ret, frame = self.cap.read()
         if not ret:
             return  # No frame, do nothing
 
-        # Debug (optional): print the shape to ensure it's non-zero
-        # print("Frame shape:", frame.shape)
-
-        # 1. (Skip brightness/contrast for now, to see raw color better)
-        # frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=20)
-
-        # 2. Resize to a bigger ASCII size for better detail
-        width = 120
-        height = 90
+        # 1. Resize to a manageable ASCII size
+        width = 80
+        height = 60
         resized_frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
 
-        # 3. Build HTML string with colored spans
+        # 2. Build HTML string with colored spans
         ascii_rows = []
-        # Convert row to a bigger integer type to avoid overflow
-        # We'll do it pixel by pixel below
         for row in resized_frame:
             row_html = ""
             for (b, g, r) in row.astype(np.uint16):
-                # 4. Map (B,G,R) => intensity => ASCII char
-                # Avoid overflow by using Python int
+                # Convert (b, g, r) to intensity
                 intensity = (int(b) + int(g) + int(r)) // 3
 
-                # Ensure index is in range
+                # Map intensity to ASCII char
                 char_index = int(intensity / 256 * len(self.ascii_chars))
-                ascii_char = self.ascii_chars[max(0, min(char_index, len(self.ascii_chars) - 1))]
+                # Ensure index is in range
+                char_index = max(0, min(char_index, len(self.ascii_chars) - 1))
+                ascii_char = self.ascii_chars[char_index]
 
-                # 5. Color the character using inline style
+                # Color the character
                 row_html += f'<span style="color: rgb({r},{g},{b});">{ascii_char}</span>'
 
             row_html += "<br>"
@@ -82,7 +77,7 @@ class AsciiWebcam(QtWidgets.QMainWindow):
 
         ascii_image_html = "".join(ascii_rows)
 
-        # 6. Set the HTML in the QTextEdit
+        # 3. Set the HTML in the QTextEdit
         self.ascii_display.setHtml(ascii_image_html)
 
     def closeEvent(self, event):
