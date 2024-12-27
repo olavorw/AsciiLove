@@ -39,11 +39,11 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         # Timer to grab frames
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_frame)
-        self.timer.start(30)  # ~33 fps
+        self.timer.start(60)  # ~33 fps
 
         # Fewer ASCII characters (darkest -> brightest), for a bolder look
         # Example: " .:-=+*#@"
-        self.ascii_chars = list(" .'`^\",:;Il!i~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$")
+        self.ascii_chars = list(" .'`^\",:;Il!i~+_-?][}{1▄█▌▀(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$")
 
     def update_frame(self):
         ret, frame = self.cap.read()
