@@ -7,7 +7,7 @@ class AsciiWebcam(QtWidgets.QMainWindow):
     def __init__(self, camera_index=0):
         super().__init__()
 
-        self.setWindowTitle("Live Color ASCII Webcam Feed (More Saturation!)")
+        self.setWindowTitle("Live Color ASCII Webcam Feed (Forced 16:9)")
         self.setGeometry(100, 100, 800, 600)
 
         # Create central widget and layout
@@ -15,10 +15,9 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QtWidgets.QVBoxLayout(central_widget)
 
-        # Use QTextEdit to display HTML. Let's style it:
+        # Display widget for ASCII output
         self.ascii_display = QtWidgets.QTextEdit()
         self.ascii_display.setReadOnly(True)
-        # Make background black, use a monospaced font, larger font size, and letter spacing
         self.ascii_display.setStyleSheet("""
             QTextEdit {
                 background-color: black;
@@ -38,50 +37,43 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         # Timer to grab frames
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_frame)
-        self.timer.start(60)  # ~16 FPS (60 ms intervals) or tune to your preference
+        self.timer.start(60)  # adjust as needed
 
-        # Custom ASCII character set with block/braille-like characters
+        # Custom ASCII characters
         self.ascii_chars = list("█▓▒░ .'`^\",:;Il!i~+_-?][}{1▄█▌▀(|")
 
-        # Tweak these factors to increase saturation/brightness
-        self.SATURATION_FACTOR = 1.5   # Increase for more vibrant colors
-        self.BRIGHTNESS_BOOST  = 1.0   # Increase for more brightness (1.0 = no change)
+        # Saturation/brightness tweaks
+        self.SATURATION_FACTOR = 1.5
+        self.BRIGHTNESS_BOOST = 2.5
+
+        # Final ASCII output dimensions (must be 16:9)
+        # For example, 80 wide × 45 tall
+        self.ascii_width  = 80
+        self.ascii_height = 45  # 16:9 ratio => height = width * 9/16 => 80 * 9/16 = 45
 
     def update_frame(self):
         ret, frame = self.cap.read()
         if not ret:
-            return  # No frame, do nothing
+            return
 
-        # --------------------------------------------
         # 1. Convert to HSV to modify saturation
-        # --------------------------------------------
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
-
-        # hsv[..., 0] is the Hue channel
-        # hsv[..., 1] is the Saturation channel
-        # hsv[..., 2] is the Value (brightness) channel
-
-        # Multiply Saturation by a factor
         hsv[..., 1] *= self.SATURATION_FACTOR
-        # Multiply Value for brightness boost, if desired
         hsv[..., 2] *= self.BRIGHTNESS_BOOST
-
-        # Clip values to valid HSV range [0,255]
         hsv = np.clip(hsv, 0, 255).astype(np.uint8)
-
-        # Convert HSV back to BGR for ASCII mapping
         frame = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
-        # --------------------------------------------
-        # 2. Resize for ASCII
-        # --------------------------------------------
-        width = 80
-        height = 60
-        resized_frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+        # 2. Crop the frame to 16:9
+        cropped = self.crop_to_16_9(frame)
 
-        # --------------------------------------------
-        # 3. Convert to ASCII + color
-        # --------------------------------------------
+        # 3. Resize to final ASCII resolution (also 16:9)
+        resized_frame = cv2.resize(
+            cropped,
+            (self.ascii_width, self.ascii_height),
+            interpolation=cv2.INTER_AREA
+        )
+
+        # 4. Convert to ASCII
         ascii_rows = []
         for row in resized_frame:
             row_html = ""
@@ -90,19 +82,37 @@ class AsciiWebcam(QtWidgets.QMainWindow):
                 char_index = int(intensity / 256 * len(self.ascii_chars))
                 char_index = max(0, min(char_index, len(self.ascii_chars) - 1))
                 ascii_char = self.ascii_chars[char_index]
-
-                # Build HTML for this character with inline color
                 row_html += f'<span style="color: rgb({r},{g},{b});">{ascii_char}</span>'
-
             row_html += "<br>"
             ascii_rows.append(row_html)
 
         ascii_image_html = "".join(ascii_rows)
-
-        # --------------------------------------------
-        # 4. Render the ASCII art in the QTextEdit
-        # --------------------------------------------
         self.ascii_display.setHtml(ascii_image_html)
+
+    def crop_to_16_9(self, frame):
+        """
+        Crops the input frame (H,W) to a 16:9 aspect ratio by center-cutting.
+        """
+        desired_ratio = 16 / 9
+        h, w = frame.shape[:2]
+        current_ratio = w / h
+
+        if abs(current_ratio - desired_ratio) < 1e-5:
+            # Already 16:9, no crop needed
+            return frame
+
+        if current_ratio > desired_ratio:
+            # Too wide, crop width
+            new_w = int(h * desired_ratio)
+            offset = (w - new_w) // 2
+            cropped = frame[:, offset:offset + new_w]
+        else:
+            # Too tall, crop height
+            new_h = int(w / desired_ratio)
+            offset = (h - new_h) // 2
+            cropped = frame[offset:offset + new_h, :]
+
+        return cropped
 
     def closeEvent(self, event):
         if self.cap.isOpened():
@@ -111,7 +121,8 @@ class AsciiWebcam(QtWidgets.QMainWindow):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    window = AsciiWebcam(camera_index=3)  # or 0, 1, etc. depending on your system
+    # Use the camera index that works on your machine (e.g., 0, 1, 3, etc.)
+    window = AsciiWebcam(camera_index=3)
     window.show()
     sys.exit(app.exec_())
 
