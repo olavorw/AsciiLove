@@ -10,61 +10,79 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         self.setWindowTitle("Live Color ASCII Webcam Feed")
         self.setGeometry(100, 100, 800, 600)
 
+        # Create central widget and layout
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
         layout = QtWidgets.QVBoxLayout(central_widget)
 
+        # Use QTextEdit to display HTML. Let's style it:
         self.ascii_display = QtWidgets.QTextEdit()
         self.ascii_display.setReadOnly(True)
+        # Make background black, use a monospaced font, and white as default text color:
+        self.ascii_display.setStyleSheet("""
+            QTextEdit {
+                background-color: black; 
+                color: white; 
+                font-family: 'Courier New', monospace; 
+                font-size: 9pt;
+            }
+        """)
         layout.addWidget(self.ascii_display)
 
+        # Initialize camera
         self.cap = cv2.VideoCapture(camera_index)
         if not self.cap.isOpened():
             raise ValueError(f"Unable to open webcam (index {camera_index})")
 
+        # Timer to grab frames
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_frame)
-        self.timer.start(30)
+        self.timer.start(30)  # ~33 fps
 
-        # Extended ASCII character set
+        # Extended ASCII character set (darkest -> brightest)
+        # Source: https://stackoverflow.com/questions/47143332
         self.ascii_chars = list(" .'`^\",:;Il!i~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$")
 
     def update_frame(self):
         ret, frame = self.cap.read()
         if not ret:
-            return
+            return  # No frame, do nothing
 
-        # 1. OPTIONAL: Adjust brightness or do gamma correction
-        alpha = 1.2  # contrast
-        beta = 20    # brightness
-        frame = cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
+        # Debug (optional): print the shape to ensure it's non-zero
+        # print("Frame shape:", frame.shape)
 
-        # 2. Resize to a manageable ASCII size
-        width = 80
-        height = 60
+        # 1. (Skip brightness/contrast for now, to see raw color better)
+        # frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=20)
+
+        # 2. Resize to a bigger ASCII size for better detail
+        width = 120
+        height = 90
         resized_frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
 
-        # 3. Build HTML string
+        # 3. Build HTML string with colored spans
         ascii_rows = []
+        # Convert row to a bigger integer type to avoid overflow
+        # We'll do it pixel by pixel below
         for row in resized_frame:
             row_html = ""
-            # Convert row to a larger integer type to avoid overflow
-            row_16 = row.astype(np.uint16)
+            for (b, g, r) in row.astype(np.uint16):
+                # 4. Map (B,G,R) => intensity => ASCII char
+                # Avoid overflow by using Python int
+                intensity = (int(b) + int(g) + int(r)) // 3
 
-            for (b_16, g_16, r_16) in row_16:
-                # 4. SAFE addition to avoid overflow
-                intensity = (int(b_16) + int(g_16) + int(r_16)) // 3
-
+                # Ensure index is in range
                 char_index = int(intensity / 256 * len(self.ascii_chars))
-                ascii_char = self.ascii_chars[char_index]
+                ascii_char = self.ascii_chars[max(0, min(char_index, len(self.ascii_chars) - 1))]
 
-                # 5. Color the character
-                row_html += f'<span style="color: rgb({r_16},{g_16},{b_16});">{ascii_char}</span>'
+                # 5. Color the character using inline style
+                row_html += f'<span style="color: rgb({r},{g},{b});">{ascii_char}</span>'
 
             row_html += "<br>"
             ascii_rows.append(row_html)
 
         ascii_image_html = "".join(ascii_rows)
+
+        # 6. Set the HTML in the QTextEdit
         self.ascii_display.setHtml(ascii_image_html)
 
     def closeEvent(self, event):
