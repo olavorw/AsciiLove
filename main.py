@@ -43,7 +43,7 @@ class AsciiWebcam(QtWidgets.QMainWindow):
 
         # Fewer ASCII characters (darkest -> brightest), for a bolder look
         # Example: " .:-=+*#@"
-        self.ascii_chars = list(" .:-=+*#@")
+        self.ascii_chars = list(" .'`^\",:;Il!i~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$")
 
     def update_frame(self):
         ret, frame = self.cap.read()
