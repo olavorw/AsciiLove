@@ -7,29 +7,44 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 # On Windows, forcing DirectShow can be faster than MSMF
 BACKEND = cv2.CAP_DSHOW if sys.platform.startswith('win') else None
 
+class AsciiData:
+    """
+    Simple container to hold a 2D array of (char, (r,g,b)) pairs
+    representing the color ASCII 'frame'.
+    """
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        # 2D list: ascii_pixels[y][x] = (char, (r,g,b))
+        self.ascii_pixels = [[(" ", (255,255,255)) for _ in range(width)]
+                             for _ in range(height)]
+
+
 class AsciiWorker(QtCore.QObject):
-    frame_ready = QtCore.pyqtSignal(str)  # Plain text ASCII (no HTML)
+    # Instead of sending a big string, we'll send an AsciiData object
+    frame_ready = QtCore.pyqtSignal(AsciiData)
     finished    = QtCore.pyqtSignal()
 
-    def __init__(self, camera_index=0, ascii_width=80, ascii_height=45):
+    def __init__(self, camera_index=0, ascii_width=160, ascii_height=90):
         super().__init__()
         self.camera_index = camera_index
         self.ascii_width  = ascii_width
         self.ascii_height = ascii_height
         self._running     = True
 
-        # Monochrome ASCII palette
-        self.ascii_chars = list("@%#*+=-:. ")
+        # **Color** ASCII palette (darkest -> brightest).
+        # Feel free to expand or reorder for finer gradients.
+        self.ascii_chars = list(" .:-=+*#%@")
 
-        # HSV adjustments (optional)
-        self.SATURATION_FACTOR = 1.5
-        self.BRIGHTNESS_BOOST  = 2.5
+        # HSV adjustments
+        self.SATURATION_FACTOR = 2.5
+        self.BRIGHTNESS_BOOST  = 2.0
 
-        # Force 16:9 cropping
+        # Force 16:9
         self.desired_ratio = 16 / 9
 
     def start_capture(self):
-        """Loop capturing frames and converting them to ASCII until stopped."""
+        # Open camera (with optional backend)
         if BACKEND is not None:
             cap = cv2.VideoCapture(self.camera_index, BACKEND)
         else:
@@ -40,17 +55,17 @@ class AsciiWorker(QtCore.QObject):
             self.finished.emit()
             return
 
-        # Attempt to set camera properties if supported
+        # Try to set camera properties
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-        cap.set(cv2.CAP_PROP_FPS, 90)  # If your camera truly does 90 FPS
+        cap.set(cv2.CAP_PROP_FPS, 90)  # if your camera can do 90 FPS
 
         while self._running:
             ret, frame = cap.read()
             if not ret:
                 continue
 
-            # 1) Optional: HSV brightness/saturation
+            # 1) HSV saturation/brightness
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
             hsv[..., 1] *= self.SATURATION_FACTOR
             hsv[..., 2] *= self.BRIGHTNESS_BOOST
@@ -60,18 +75,18 @@ class AsciiWorker(QtCore.QObject):
             # 2) Crop to 16:9
             frame_169 = self.crop_to_169(frame)
 
-            # 3) Resize to ASCII resolution
+            # 3) Resize to ASCII grid size
             resized_frame = cv2.resize(
                 frame_169,
                 (self.ascii_width, self.ascii_height),
                 interpolation=cv2.INTER_AREA
             )
 
-            # 4) Convert to plain-text ASCII (no HTML)
-            ascii_text = self.frame_to_ascii(resized_frame)
+            # 4) Convert to (char, (r,g,b)) 2D data
+            ascii_data = self.frame_to_ascii_data(resized_frame)
 
-            # 5) Emit the ASCII text
-            self.frame_ready.emit(ascii_text)
+            # 5) Emit to main thread
+            self.frame_ready.emit(ascii_data)
 
         cap.release()
         self.finished.emit()
@@ -80,7 +95,6 @@ class AsciiWorker(QtCore.QObject):
         self._running = False
 
     def crop_to_169(self, frame):
-        """Center-crop the frame to a strict 16:9 aspect ratio."""
         h, w = frame.shape[:2]
         ratio = w / h
         if abs(ratio - self.desired_ratio) < 1e-5:
@@ -94,51 +108,90 @@ class AsciiWorker(QtCore.QObject):
             offset = (h - new_h) // 2
             return frame[offset:offset + new_h, :]
 
-    def frame_to_ascii(self, frame_bgr):
+    def frame_to_ascii_data(self, frame_bgr):
         """
-        Convert a BGR frame to a multiline ASCII string.
-        No color tags, just grayscale mapping => FAST.
+        Build an AsciiData object with each pixel -> (char, (r,g,b)).
         """
-        rows = []
-        for row in frame_bgr:
-            row_chars = []
-            for (b, g, r) in row.astype(np.uint16):
-                intensity = (b + g + r) // 3
-                char_index = int(intensity / 256 * len(self.ascii_chars))
-                # clamp index
-                char_index = max(0, min(char_index, len(self.ascii_chars) - 1))
-                row_chars.append(self.ascii_chars[char_index])
-            rows.append("".join(row_chars))
+        h, w = frame_bgr.shape[:2]
+        out = AsciiData(width=w, height=h)
 
-        # Join with newlines
-        return "\n".join(rows)
+        # For each pixel, map intensity -> ascii char
+        # Also store the original color (r,g,b).
+        for y in range(h):
+            row = frame_bgr[y]
+            out_row = out.ascii_pixels[y]
+            for x in range(w):
+                b, g, r = row[x]
+                intensity = (int(b) + int(g) + int(r)) // 3
+                # pick char
+                idx = int(intensity / 256 * len(self.ascii_chars))
+                idx = max(0, min(idx, len(self.ascii_chars) - 1))
+                ascii_char = self.ascii_chars[idx]
+                out_row[x] = (ascii_char, (r, g, b))
+
+        return out
+
+
+class ColorAsciiWidget(QtWidgets.QWidget):
+    """
+    Custom widget to draw color ASCII using QPainter.
+    Each 'pixel' is a single character with a specific pen color.
+    """
+    def __init__(self, ascii_width, ascii_height, parent=None):
+        super().__init__(parent)
+        self.ascii_width  = ascii_width
+        self.ascii_height = ascii_height
+        self.ascii_data   = None
+
+        self.char_w = 9   # approximate width of each char
+        self.char_h = 16  # approximate height of each char
+
+        # We'll pick a monospaced font
+        self.font = QtGui.QFont("Courier New", 14)
+        self.setMinimumSize(self.ascii_width * self.char_w,
+                            self.ascii_height * self.char_h)
+
+    def update_ascii(self, ascii_data):
+        """
+        Receive an AsciiData object from the worker. Store and repaint.
+        """
+        self.ascii_data = ascii_data
+        self.update()  # trigger paintEvent
+
+    def paintEvent(self, event):
+        if not self.ascii_data:
+            return
+
+        painter = QtGui.QPainter(self)
+        painter.setFont(self.font)
+
+        # For each pixel, set pen color, draw character
+        for y in range(self.ascii_data.height):
+            for x in range(self.ascii_data.width):
+                char, (r, g, b) = self.ascii_data.ascii_pixels[y][x]
+                painter.setPen(QtGui.QColor(r, g, b))
+
+                # position on screen
+                px = x * self.char_w
+                py = (y+1) * self.char_h  # drawText baseline offset
+                painter.drawText(px, py, char)
 
 
 class AsciiWebcam(QtWidgets.QMainWindow):
-    def __init__(self, camera_index=0, ascii_width=80, ascii_height=45):
+    def __init__(self, camera_index=0, ascii_width=160, ascii_height=90):
         super().__init__()
+        self.setWindowTitle("Color ASCII Webcam (High Res + Faster)")
 
-        self.setWindowTitle("Monochrome ASCII Webcam (High FPS)")
-        self.setGeometry(100, 100, 800, 600)
-
-        central_widget = QtWidgets.QWidget()
+        # Main widget
+        central_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(central_widget)
         layout = QtWidgets.QVBoxLayout(central_widget)
 
-        # QPlainTextEdit for fast plain-text display
-        self.ascii_display = QtWidgets.QPlainTextEdit()
-        self.ascii_display.setReadOnly(True)
-        self.ascii_display.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: black;
-                color: white;
-                font-family: 'Consolas', monospace;
-                font-size: 10pt;
-            }
-        """)
-        layout.addWidget(self.ascii_display)
+        # Custom painting widget
+        self.ascii_canvas = ColorAsciiWidget(ascii_width, ascii_height)
+        layout.addWidget(self.ascii_canvas)
 
-        # Create worker + thread
+        # Worker + Thread
         self.worker_thread = QtCore.QThread()
         self.worker = AsciiWorker(
             camera_index=camera_index,
@@ -147,17 +200,15 @@ class AsciiWebcam(QtWidgets.QMainWindow):
         )
         self.worker.moveToThread(self.worker_thread)
 
-        # Connect signals
         self.worker_thread.started.connect(self.worker.start_capture)
         self.worker.frame_ready.connect(self.on_frame_ready)
         self.worker.finished.connect(self.on_worker_finished)
-
         self.worker_thread.start()
 
-    @QtCore.pyqtSlot(str)
-    def on_frame_ready(self, ascii_text):
-        # Update the QPlainTextEdit with plain text
-        self.ascii_display.setPlainText(ascii_text)
+    @QtCore.pyqtSlot(AsciiData)
+    def on_frame_ready(self, ascii_data):
+        # Update the painting widget with new data
+        self.ascii_canvas.update_ascii(ascii_data)
 
     @QtCore.pyqtSlot()
     def on_worker_finished(self):
@@ -171,11 +222,12 @@ class AsciiWebcam(QtWidgets.QMainWindow):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    # For a bigger ASCII grid, you could try 160×90, but 80×45 is a good start for high FPS
-    window = AsciiWebcam(camera_index=3, ascii_width=80, ascii_height=45)
+
+    # Try a big grid, e.g., 160×90 or 200×112.
+    # The bigger you go, the heavier the rendering loop.
+    window = AsciiWebcam(camera_index=3, ascii_width= 250, ascii_height=112)
     window.show()
     sys.exit(app.exec_())
-
 
 if __name__ == "__main__":
     main()
