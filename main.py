@@ -24,7 +24,7 @@ class AsciiWebcam(QtWidgets.QMainWindow):
             QTextEdit {
                 background-color: black;
                 color: white;
-                font-family: 'Courier New', monospace;
+                font-family: 'Cascadia Code', monospace;
                 font-size: 14pt;
                 letter-spacing: 2px; /* Increase if you want even more spacing */
             }
