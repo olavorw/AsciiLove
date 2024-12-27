@@ -1,7 +1,7 @@
 import sys
 import cv2
 import numpy as np
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 class AsciiWebcam(QtWidgets.QMainWindow):
     def __init__(self, camera_index=0):
@@ -111,7 +111,7 @@ class AsciiWebcam(QtWidgets.QMainWindow):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    window = AsciiWebcam(camera_index=5)  # or 0, 1, etc. depending on your system
+    window = AsciiWebcam(camera_index=3)  # or 0, 1, etc. depending on your system
     window.show()
     sys.exit(app.exec_())
 
