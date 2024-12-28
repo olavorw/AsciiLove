@@ -37,8 +37,8 @@ class AsciiWorker(QtCore.QObject):
         self.ascii_chars = list(" .:-=+*#%@")
 
         # HSV adjustments
-        self.SATURATION_FACTOR = 2.5
-        self.BRIGHTNESS_BOOST  = 2.0
+        self.SATURATION_FACTOR = 16.0
+        self.BRIGHTNESS_BOOST  = 1.0
 
         # Force 16:9
         self.desired_ratio = 16 / 9
